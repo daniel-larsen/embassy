@@ -98,7 +98,7 @@ impl<'d, DFU: NorFlash, STATE: NorFlash> FirmwareUpdater<'d, DFU, STATE> {
             let public_key = VerifyingKey::from_bytes(_public_key).map_err(into_signature_error)?;
             let signature = Signature::from_bytes(_signature);
 
-            let mut chunk_buf = [0; 2];
+            let mut chunk_buf = [0; 4];
             let mut message = [0; 64];
             self.hash::<Sha512>(_update_len, &mut chunk_buf, &mut message).await?;
 
@@ -118,7 +118,7 @@ impl<'d, DFU: NorFlash, STATE: NorFlash> FirmwareUpdater<'d, DFU, STATE> {
             let signature = Signature::try_from(_signature).map_err(into_signature_error)?;
 
             let mut message = [0; 64];
-            let mut chunk_buf = [0; 2];
+            let mut chunk_buf = [0; 4];
             self.hash::<Sha512>(_update_len, &mut chunk_buf, &mut message).await?;
 
             let r = public_key.verify(&message, &signature);
@@ -275,7 +275,7 @@ impl<'d, STATE: NorFlash> FirmwareState<'d, STATE> {
 
         if self.aligned.iter().any(|&b| b != magic) {
             // Read progress validity
-            self.state.read(STATE::WRITE_SIZE as u32, &mut self.aligned).await?;
+            self.state.read(0, &mut self.aligned).await?;
 
             if self.aligned.iter().any(|&b| b != STATE_ERASE_VALUE) {
                 // The current progress validity marker is invalid
