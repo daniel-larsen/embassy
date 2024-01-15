@@ -6,7 +6,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embedded_storage_async::nor_flash::NorFlash;
 
 use super::FirmwareUpdaterConfig;
-use crate::{FirmwareUpdaterError, State, BOOT_MAGIC, DFU_DETACH_MAGIC, STATE_ERASE_VALUE, SWAP_MAGIC};
+use crate::{FirmwareUpdaterError, State, BOOT_MAGIC, DFU_DETACH_MAGIC, STATE_ERASE_VALUE, SWAP_MAGIC, AlignedBuffer};
 
 /// FirmwareUpdater is an application API for interacting with the BootLoader without the ability to
 /// 'mess up' the internal bootloader state
@@ -271,26 +271,31 @@ impl<'d, STATE: NorFlash> FirmwareState<'d, STATE> {
     }
 
     async fn set_magic(&mut self, magic: u8) -> Result<(), FirmwareUpdaterError> {
-        self.state.read(0, &mut self.aligned).await?;
+        let mut buffer = AlignedBuffer([0; 1]);
+        let mut async_buffer = AlignedBuffer([0; 4]);
 
-        if self.aligned.iter().any(|&b| b != magic) {
+        self.state.read(0, &mut async_buffer.0).await?;
+        buffer.0[0] = async_buffer.0[0];
+
+        if buffer.0.iter().any(|&b| b != magic) {
             // Read progress validity
-            self.state.read(0, &mut self.aligned).await?;
+            self.state.read(0, &mut async_buffer.0).await?;
+            buffer.0[0] = async_buffer.0[1];
 
-            if self.aligned.iter().any(|&b| b != STATE_ERASE_VALUE) {
+            if buffer.0.iter().any(|&b| b != STATE_ERASE_VALUE) {
                 // The current progress validity marker is invalid
             } else {
                 // Invalidate progress
-                self.aligned.fill(!STATE_ERASE_VALUE);
-                self.state.write(STATE::WRITE_SIZE as u32, &self.aligned).await?;
+                buffer.0.fill(!STATE_ERASE_VALUE);
+                self.state.write(STATE::WRITE_SIZE as u32, &buffer.0).await?;
             }
 
             // Clear magic and progress
             self.state.erase(0, self.state.capacity() as u32).await?;
 
             // Set magic
-            self.aligned.fill(magic);
-            self.state.write(0, &self.aligned).await?;
+            buffer.0.fill(magic);
+            self.state.write(0, &buffer.0).await?;
         }
         Ok(())
     }
